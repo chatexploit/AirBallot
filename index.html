@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viswadeepthi Election Portal</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        :root { --primary: #2B3A8B; --bg: #f4f7f6; }
+        body { font-family: -apple-system, sans-serif; background-color: var(--bg); margin: 0; text-align: center; }
+        .top-banner { display: flex; justify-content: space-between; align-items: center; background: white; padding: 15px 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-bottom: 5px solid var(--primary); }
+        .top-banner img { max-height: 50px; }
+        .top-banner h1 { color: var(--primary); margin: 0; font-size: 20px; text-transform: uppercase; }
+        .fs-btn { background: #e9ecef; border: none; font-size: 20px; cursor: pointer; padding: 8px 12px; border-radius: 6px; }
+
+        .utility-bar { margin: 25px auto; }
+        .util-btn { background: #e67e22; color: white; border: none; padding: 15px 25px; font-size: 18px; border-radius: 6px; cursor: pointer; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1);}
+
+        .portal-grid { display: flex; flex-direction: column; align-items: center; gap: 20px; padding: 0 20px 40px 20px; }
+        .portal-card { background: white; width: 100%; max-width: 340px; padding: 25px 15px; border-radius: 14px; box-shadow: 0 6px 16px rgba(0,0,0,0.06); text-decoration: none; color: #333; transition: 0.2s; border: 2px solid transparent;}
+        .portal-card:active { transform: scale(0.98); border-color: var(--primary); }
+        .portal-card .icon { font-size: 40px; margin-bottom: 10px; }
+        .portal-card h2 { color: var(--primary); margin: 0 0 5px 0; font-size: 20px; }
+        .portal-card p { color: #666; font-size: 14px; margin: 0; line-height: 1.4; }
+
+        @media (min-width: 600px) { .portal-grid { flex-direction: row; justify-content: center; gap: 20px; } }
+    </style>
+</head>
+<body>
+
+    <div class="top-banner">
+        <img src="logo.png" alt="Logo">
+        <h1>EVM VDPS</h1>
+        <button class="fs-btn" onclick="toggleFullScreen()" title="Toggle Full Screen">🖥️</button>
+    </div>
+
+    <div class="utility-bar">
+        <button id="folder-btn" class="util-btn" onclick="selectProjectFolder()">📂 1. Link Election Folder First</button>
+    </div>
+
+    <div class="portal-grid">
+        <a href="voting.html" class="portal-card"><div class="icon">🗳️</div><h2>Voting Booth</h2><p>Secure digital ballot screen for continuous student voting.</p></a>
+        <a href="results.html" class="portal-card"><div class="icon">📊</div><h2>Live Results</h2><p>Real-time class counts and giant winner reveal.</p></a>
+        <a href="admin.html" class="portal-card"><div class="icon">⚙️</div><h2>Admin Suite</h2><p>Manage list layouts, backups, and class resets.</p></a>
+    </div>
+
+    <script>
+        const DB_NAME = 'ElectionPWA';
+        function getDB() { return new Promise(resolve => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => e.target.result.createObjectStore('store'); req.onsuccess = e => resolve(e.target.result); }); }
+        async function saveFolderHandle(handle) { const db = await getDB(); db.transaction('store', 'readwrite').objectStore('store').put(handle, 'folderHandle'); }
+
+        async function selectProjectFolder() {
+            try {
+                const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                await saveFolderHandle(dirHandle); 
+                const btn = document.getElementById('folder-btn');
+                btn.innerText = "✅ Folder Linked System-Wide!"; btn.style.background = "#28a745";
+            } catch (err) { alert("Folder access cancelled."); }
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(() => {}); } 
+            else { if (document.exitFullscreen) document.exitFullscreen(); }
+        }
+
+        if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+    </script>
+</body>
+</html>

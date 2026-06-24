@@ -1,0 +1,48 @@
+{
+  "schoolName": "VISWADEEPTHI CMI PUBLIC SCHOOL",
+  "electionTitle": "General Student Council Election 2026",
+  "status": "paused",
+  "adminPin": "1234",
+  "classes": [
+    "CLASS 11 A",
+    "CLASS 11 B"
+  ],
+  "candidates": [
+    {
+      "id": 1,
+      "name": "SAIRA NAZRIN",
+      "class": "CLASS 11 A",
+      "photo": "src/SAIRA.jpg",
+      "votes": 0
+    },
+    {
+      "id": 2,
+      "name": "MONICA JOSEPH",
+      "class": "CLASS 11 A",
+      "photo": "src/MONICA.jpg",
+      "votes": 0
+    },
+    {
+      "id": 3,
+      "name": "GOURINANDA K.S",
+      "class": "CLASS 11 A",
+      "photo": "src/GOURINANDA.jpg",
+      "votes": 0
+    },
+    {
+      "id": 4,
+      "name": "GAVIN GAYAL GEEVA",
+      "class": "CLASS 11 A",
+      "photo": "src/GAVIN.jpg",
+      "votes": 0
+    },
+    {
+      "id": 5,
+      "name": "EVA MARIA EBY",
+      "class": "CLASS 11 A",
+      "photo": "src/EVA.jpg",
+      "votes": 0
+    }
+  ],
+  "votingMode": "2-tap"
+}

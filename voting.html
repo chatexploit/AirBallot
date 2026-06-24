@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Secure Voting Booth</title>
+    <style>
+        :root { --primary: #2B3A8B; --success: #28a745; --danger: #dc3545; }
+        
+        body { 
+            font-family: -apple-system, sans-serif; 
+            background: #f4f7f6; 
+            margin: 0; 
+            padding: 10px; 
+            text-align: center; 
+            user-select: none; 
+            height: 100vh; 
+            box-sizing: border-box; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+        }
+        
+        .nav-top { display: flex; justify-content: space-between; align-items: center; background: white; padding: 10px 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 10px; flex-shrink: 0;}
+        .nav-top a { text-decoration: none; color: var(--primary); font-weight: bold; font-size: 16px; }
+        
+        .util-btn { background: #17a2b8; color: white; border: none; padding: 8px 12px; font-size: 14px; border-radius: 6px; cursor: pointer; font-weight: bold; text-decoration: none;}
+        .btn-danger { background: var(--danger); }
+        .fs-btn { background: #e9ecef; border: none; font-size: 20px; cursor: pointer; padding: 5px 10px; border-radius: 6px; }
+
+        .db-lock { background: #ffeeba; color: #856404; padding: 15px; border-radius: 8px; font-weight: bold; cursor: pointer; border: 2px dashed #ccc; display: block; margin: 10px auto; font-size: 16px; max-width: 90%; }
+        
+        #booth-content { flex-grow: 1; display: flex; flex-direction: column; justify-content: flex-start; height: 100%; overflow: hidden;}
+        h1 { color: var(--primary); font-size: 28px; margin: 5px 0; flex-shrink: 0;}
+        #booth-subtitle { color: #666; margin-bottom: 10px; font-size: 18px; flex-shrink: 0;}
+        
+        .grid { 
+            display: flex; 
+            justify-content: center; 
+            align-items: center;
+            align-content: center;
+            flex-wrap: wrap; 
+            gap: 20px; 
+            width: 100%; 
+            max-width: 1400px; 
+            margin: 0 auto; 
+            flex-grow: 1; 
+        }
+
+        .class-btn { background: white; border: 2px solid var(--primary); color: var(--primary); font-size: 24px; font-weight: bold; padding: 25px 40px; border-radius: 12px; cursor: pointer; width: 240px; box-shadow: 0 4px 6px rgba(0,0,0,0.04); transition: 0.1s;}
+        .class-btn:active { transform: scale(0.95); background: var(--primary); color: white; }
+
+        .candidate-card { 
+            background: white; border-radius: 14px; box-shadow: 0 6px 16px rgba(0,0,0,0.1); 
+            display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+            text-align: center; border: 3px solid transparent; box-sizing: border-box;
+        }
+        .candidate-card img { border-radius: 50%; object-fit: cover; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .candidate-card h3 { color: #333; margin: 0; display: flex; align-items: center; justify-content: center; font-weight: 800;}
+        .candidate-card .badge { background: #e9ecef; color: #555; border-radius: 12px; display: inline-block; font-weight: bold;}
+        .vote-btn { background: var(--success); color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; width: 100%; transition: 0.1s;}
+        .vote-btn:active { background: #1e7e34; transform: scale(0.95); }
+
+        /* INCREASED DYNAMIC SCALING SIZES */
+        
+        .size-huge .candidate-card { width: 380px; padding: 35px; gap: 20px; }
+        .size-huge .candidate-card img { width: 220px; height: 220px; }
+        .size-huge .candidate-card h3 { font-size: 32px; }
+        .size-huge .candidate-card .badge { font-size: 18px; padding: 6px 16px; }
+        .size-huge .vote-btn { font-size: 28px; padding: 22px 0; }
+
+        .size-large .candidate-card { width: 280px; padding: 25px; gap: 12px; }
+        .size-large .candidate-card img { width: 160px; height: 160px; }
+        .size-large .candidate-card h3 { font-size: 24px; height: 50px;}
+        .size-large .candidate-card .badge { font-size: 14px; padding: 4px 12px; }
+        .size-large .vote-btn { font-size: 22px; padding: 18px 0; }
+
+        .size-medium .candidate-card { width: 220px; padding: 18px; gap: 10px;}
+        .size-medium .candidate-card img { width: 120px; height: 120px; }
+        .size-medium .candidate-card h3 { font-size: 19px; height: 45px;}
+        .size-medium .candidate-card .badge { font-size: 12px; padding: 3px 10px; }
+        .size-medium .vote-btn { font-size: 18px; padding: 14px 0; }
+
+        .size-small .candidate-card { width: 160px; padding: 12px; gap: 6px;}
+        .size-small .candidate-card img { width: 85px; height: 85px; }
+        .size-small .candidate-card h3 { font-size: 16px; height: 40px;}
+        .size-small .candidate-card .badge { display: none; }
+        .size-small .vote-btn { font-size: 16px; padding: 10px 0; }
+
+        #success-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(43, 58, 139, 0.98); color: white; display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; }
+        #success-overlay .tick { font-size: 140px; color: #28a745; margin-bottom: 10px;}
+    </style>
+</head>
+<body>
+
+    <div class="nav-top">
+        <div style="display:flex; align-items:center; gap:15px;">
+            <img src="logo.png" alt="Logo" style="height: 40px;">
+            <a href="index.html">⬅ Home</a>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <button onclick="endVoting()" class="util-btn btn-danger">🛑 End</button>
+            <a href="results.html" class="util-btn">📊 Results</a>
+            <button class="fs-btn" onclick="toggleFullScreen()" title="Full Screen">🖥️</button>
+        </div>
+    </div>
+
+    <div id="unlock-section"><div class="db-lock">Checking link...</div></div>
+
+    <div id="booth-content" style="display: none;">
+        <h1 id="booth-title">Select Your Class</h1>
+        <div id="booth-subtitle">Choose your batch</div>
+        <div class="grid" id="interactive-area"></div>
+    </div>
+
+    <div id="success-overlay">
+        <div class="tick">✔</div>
+        <h1 style="color:white; font-size: 60px; margin: 0;">VOTED!</h1>
+        <p style="font-size: 24px; color: #ccc;">Next voter please step up.</p>
+    </div>
+
+    <script>
+        const DB_NAME = 'ElectionPWA';
+        function getDB() { return new Promise(resolve => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => e.target.result.createObjectStore('store'); req.onsuccess = e => resolve(e.target.result); }); }
+        async function getFolderHandle() { const db = await getDB(); return new Promise(resolve => { const req = db.transaction('store', 'readonly').objectStore('store').get('folderHandle'); req.onsuccess = () => resolve(req.result); req.onerror = () => resolve(null); }); }
+
+        let fileHandle = null, db = null, selectedClass = null, dirHandle = null;
+
+        window.onload = async () => {
+            dirHandle = await getFolderHandle();
+            if (dirHandle) document.getElementById('unlock-section').innerHTML = `<div class="db-lock" style="background:#d4edda; color:#155724; border-color:#c3e6cb;" onclick="unlockSession()">▶ Tap to Connect Booth</div>`;
+            else document.getElementById('unlock-section').innerHTML = `<div class="db-lock" style="background:#f8d7da; color:#721c24;">🚨 No Folder Linked! Go to Home Page.</div>`;
+        };
+
+        function toggleFullScreen() { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else if (document.exitFullscreen) document.exitFullscreen(); }
+
+        function playLoudBeep() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator(); const gainNode = ctx.createGain();
+                osc.connect(gainNode); gainNode.connect(ctx.destination);
+                osc.type = 'square'; osc.frequency.value = 850; gainNode.gain.value = 2.0;
+                osc.start(); setTimeout(() => osc.stop(), 300);
+            } catch(e) {} 
+        }
+
+        async function unlockSession() {
+            try {
+                if ((await dirHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
+                    if ((await dirHandle.requestPermission({ mode: 'readwrite' })) !== 'granted') return alert("Permission Denied.");
+                }
+                fileHandle = await dirHandle.getFileHandle('database.txt');
+                await loadData();
+                document.getElementById('unlock-section').style.display = 'none';
+                document.getElementById('booth-content').style.display = 'flex';
+                showClassSelection();
+            } catch(e) { alert("Link lost. Go Home and re-link."); }
+        }
+
+        async function loadData() { db = JSON.parse(await (await fileHandle.getFile()).text()); }
+
+        async function endVoting() {
+            if(!db) return;
+            if (prompt("Enter Master PIN to End Voting:") === db.adminPin) {
+                db.status = 'paused';
+                const writable = await fileHandle.createWritable();
+                await writable.write(JSON.stringify(db, null, 2)); await writable.close();
+                alert("Voting Locked."); showClassSelection(); 
+            } else alert("Incorrect PIN.");
+        }
+
+        function showClassSelection() {
+            selectedClass = null;
+            document.getElementById('booth-title').innerText = "Select Your Class";
+            document.getElementById('booth-subtitle').innerText = "Choose your batch";
+            const area = document.getElementById('interactive-area'); 
+            area.innerHTML = '';
+            area.className = 'grid'; 
+            
+            if(db.status !== 'active') return area.innerHTML = `<h3 style="color:red; width:100%;">🚨 Booth is Closed.</h3>`;
+            db.classes.forEach(cls => area.innerHTML += `<button class="class-btn" onclick="openClassBallot('${cls}')">${cls}</button>`);
+        }
+
+        function openClassBallot(clsName) {
+            selectedClass = clsName;
+            document.getElementById('booth-title').innerText = `${clsName} Ballot`;
+            document.getElementById('booth-subtitle').innerHTML = `<a href="#" onclick="showClassSelection(); return false;" style="color:#2B3A8B; font-weight:bold; font-size: 16px;">↩ Switch Class</a>`;
+            const area = document.getElementById('interactive-area'); area.innerHTML = '';
+            
+            const myCandidates = db.candidates.filter(c => c.class === clsName);
+            if(myCandidates.length === 0) return area.innerHTML = `<p style="color:#888;">No candidates in this batch.</p>`;
+
+            area.className = 'grid'; 
+            if (myCandidates.length <= 2) area.classList.add('size-huge');
+            else if (myCandidates.length <= 4) area.classList.add('size-large');
+            else if (myCandidates.length <= 6) area.classList.add('size-medium');
+            else area.classList.add('size-small');
+
+            myCandidates.forEach(c => {
+                area.innerHTML += `
+                    <div class="candidate-card">
+                        <img src="${c.photo}" onerror="this.src='https://placehold.co/200?text=Pic'">
+                        <div style="width:100%;">
+                            <h3>${c.name}</h3>
+                            <span class="badge">${c.class}</span>
+                        </div>
+                        <button class="vote-btn" onclick="castVote(${c.id}, '${c.name}')">VOTE</button>
+                    </div>`;
+            });
+        }
+
+        async function castVote(candidateId, candidateName) {
+            if (db.votingMode === '2-tap' && !confirm(`Cast your vote for ${candidateName}?`)) return;
+            playLoudBeep(); await loadData(); 
+            db.candidates.find(c => c.id === candidateId).votes += 1;
+
+            const writable = await fileHandle.createWritable();
+            await writable.write(JSON.stringify(db, null, 2)); await writable.close();
+
+            const overlay = document.getElementById('success-overlay'); overlay.style.display = 'flex';
+            setTimeout(() => { 
+                overlay.style.display = 'none'; 
+                openClassBallot(selectedClass); 
+            }, 1500); 
+        }
+    </script>
+</body>
+</html>

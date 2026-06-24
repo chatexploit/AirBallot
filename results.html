@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Election Standings</title>
+    <style>
+        :root { --primary: #2B3A8B; --gold: #f39c12; }
+        body { font-family: -apple-system, sans-serif; background: #eef2f5; margin:0; padding: 15px; color:#333; }
+        .header { display: flex; justify-content: space-between; align-items: center; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 20px; border-left: 6px solid var(--primary); flex-wrap: wrap; gap: 10px;}
+        .header h1 { margin:0; color: var(--primary); font-size: 18px; }
+        .fs-btn { background: #e9ecef; border: none; font-size: 20px; cursor: pointer; padding: 5px 10px; border-radius: 6px; margin-right: 10px;}
+        .util-btn { background: #17a2b8; color: white; border: none; padding: 8px 12px; font-size: 14px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-right: 10px;}
+
+        .db-lock { background: #d4edda; color: #155724; padding: 15px; text-align: center; border-radius: 8px; font-weight: bold; cursor: pointer; border: 2px dashed #c3e6cb; margin-bottom: 20px;}
+        
+        .class-tabs { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center;}
+        .tab-btn { background: white; border: 2px solid var(--primary); color: var(--primary); padding: 10px 15px; border-radius: 30px; cursor: pointer; font-weight: bold; font-size: 14px;}
+        .tab-btn.active { background: var(--primary); color: white; }
+
+        .class-section { background: white; border-radius: 14px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); display: none; margin-bottom: 20px;}
+        .class-section h2 { border-bottom: 2px solid #eee; padding-bottom: 10px; color: var(--primary); margin-top: 0; display: flex; justify-content: space-between; align-items: center; font-size: 18px;}
+        
+        .winner-banner { background: #fff3cd; color: #856404; padding: 20px; border-radius: 10px; text-align: center; font-size: 26px; font-weight: bold; border: 3px solid #ffeeba; box-shadow: 0 4px 12px rgba(241,196,15,0.3); margin-bottom: 25px; display: flex; justify-content: center; align-items: center; gap: 15px; animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+        .cand-bar-row { display: flex; align-items: center; margin: 20px 0; flex-wrap: wrap;}
+        .cand-info { width: 100%; font-size: 16px; font-weight: bold; display: flex; align-items: center; gap: 10px; margin-bottom: 8px;}
+        .cand-info img { width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid #eee;}
+        .progress-track { flex-grow: 1; width: 100%; background: #e9ecef; height: 25px; border-radius: 15px; overflow: hidden; display: flex; }
+        .progress-fill { background: #6c757d; height: 100%; width: 0%; transition: width 1.5s ease-out; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; color:white; font-size: 14px; font-weight:bold; }
+        .winner-fill { background: #28a745 !important; }
+        .vote-count-label { padding-left: 10px; font-size: 16px; font-weight: bold; color: #555; width: 50px; text-align: right;}
+        .hidden-votes { color: #ccc; font-style: italic; }
+        .reveal-btn { background: var(--gold); color: white; border: none; padding: 8px 12px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer;}
+    </style>
+</head>
+<body>
+
+    <div id="auth-req"><div class="db-lock">Checking link...</div></div>
+
+    <div id="main-dashboard" style="display: none;">
+        <div class="header">
+            <div><h1 style="margin-bottom:3px;">LIVE STANDINGS</h1></div>
+            <div style="display: flex; align-items: center;">
+                <button class="util-btn" onclick="saveAsPNGs()">💾 Save PNGs</button>
+                <button class="fs-btn" onclick="toggleFullScreen()">🖥️</button>
+                <img src="logo.png" alt="School Logo" style="height: 40px;">
+            </div>
+        </div>
+        <div class="class-tabs" id="tabs-container"></div>
+        <div id="standings-container"></div>
+    </div>
+
+    <script>
+        const DB_NAME = 'ElectionPWA';
+        function getDB() { return new Promise(resolve => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => e.target.result.createObjectStore('store'); req.onsuccess = e => resolve(e.target.result); }); }
+        async function getFolderHandle() { const db = await getDB(); return new Promise(resolve => { const req = db.transaction('store', 'readonly').objectStore('store').get('folderHandle'); req.onsuccess = () => resolve(req.result); req.onerror = () => resolve(null); }); }
+
+        let dirHandle = null, fileHandle = null, db = null, revealedClasses = {}, currentActiveTab = null;
+
+        window.onload = async () => {
+            dirHandle = await getFolderHandle();
+            if (dirHandle) document.getElementById('auth-req').innerHTML = `<div class="db-lock" onclick="unlockSession()">▶ Tap & Enter PIN to View Standings</div>`;
+            else document.getElementById('auth-req').innerHTML = `<div class="db-lock" style="background:#f8d7da; color:#721c24;">🚨 No Folder Linked! Go to Home Page.</div>`;
+        };
+
+        function toggleFullScreen() { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else if (document.exitFullscreen) document.exitFullscreen(); }
+
+        function playRevealSound() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator(); const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.type = 'square'; osc.frequency.value = 600; gain.gain.value = 1.5;
+                osc.start(); setTimeout(() => osc.stop(), 400);
+            } catch(e) {}
+        }
+
+        async function unlockSession() {
+            try {
+                if ((await dirHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') { if ((await dirHandle.requestPermission({ mode: 'readwrite' })) !== 'granted') return alert("Permission Denied."); }
+                fileHandle = await dirHandle.getFileHandle('database.txt');
+                const tempDb = JSON.parse(await (await fileHandle.getFile()).text());
+                if(prompt("Enter Admin PIN:") !== tempDb.adminPin) return alert("Incorrect PIN.");
+
+                document.getElementById('auth-req').style.display = 'none';
+                document.getElementById('main-dashboard').style.display = 'block';
+                await updateBoard(); setInterval(updateBoard, 3000);
+            } catch(e) { alert("Error connecting to folder."); }
+        }
+
+        async function updateBoard() {
+            try {
+                db = JSON.parse(await (await fileHandle.getFile()).text());
+                const tabsContainer = document.getElementById('tabs-container');
+                
+                if (tabsContainer.innerHTML === '') {
+                    db.classes.forEach((cls, i) => {
+                        revealedClasses[cls] = false; 
+                        if(i === 0) currentActiveTab = cls;
+                        tabsContainer.innerHTML += `<button class="tab-btn" id="tab-${cls}" onclick="switchTab('${cls}')">${cls}</button>`;
+                    });
+                    if(currentActiveTab) switchTab(currentActiveTab);
+                }
+
+                const container = document.getElementById('standings-container'); container.innerHTML = '';
+
+                db.classes.forEach(cls => {
+                    const candidates = db.candidates.filter(c => c.class === cls).sort((a,b) => b.votes - a.votes);
+                    if(candidates.length === 0) return;
+
+                    const classTotalVotes = candidates.reduce((sum, c) => sum + c.votes, 0);
+                    const highestVote = candidates[0].votes;
+                    const isRevealed = revealedClasses[cls];
+
+                    let winnerBanner = '';
+                    if (isRevealed && classTotalVotes > 0) {
+                        const winners = candidates.filter(c => c.votes === highestVote).map(w => w.name).join(' & ');
+                        winnerBanner = `<div class="winner-banner">🏆 WINNER: ${winners} 🏆</div>`;
+                    }
+
+                    let html = `<div class="class-section" id="section-${cls}" style="display: ${currentActiveTab === cls ? 'block' : 'none'};">
+                                    <h2>
+                                        <div><div style="font-size:22px;">${cls}</div><div style="font-size:13px; color:#666; margin-top:5px;">TOTAL VOTES CAST: <strong style="font-size:16px; color:#2B3A8B;">${classTotalVotes}</strong></div></div>
+                                        ${!isRevealed ? `<button class="reveal-btn" onclick="revealResults('${cls}')">🎉 REVEAL</button>` : `<span style="color:#28a745;">Revealed!</span>`}
+                                    </h2>
+                                    ${winnerBanner}`;
+
+                    candidates.forEach((c, idx) => {
+                        const pct = (classTotalVotes > 0 && isRevealed) ? Math.round((c.votes / classTotalVotes) * 100) : 0;
+                        const isWinner = (isRevealed && c.votes === highestVote && c.votes > 0 && idx === 0);
+                        const displayVotes = isRevealed ? `${c.votes} v` : `<span class="hidden-votes">???</span>`;
+
+                        html += `<div class="cand-bar-row">
+                                    <div class="cand-info"><img src="${c.photo}" onerror="this.src='https://placehold.co/100?text=Pic'"><span style="${isWinner ? 'color: #28a745;' : ''}">${c.name}</span></div>
+                                    <div style="display:flex; width:100%; align-items:center;">
+                                        <div class="progress-track"><div class="progress-fill ${isWinner ? 'winner-fill' : ''}" style="width: ${pct}%">${isRevealed ? pct+'%' : ''}</div></div>
+                                        <div class="vote-count-label">${displayVotes}</div>
+                                    </div>
+                                 </div>`;
+                    });
+                    container.innerHTML += html + `</div>`;
+                });
+            } catch (e) {}
+        }
+
+        window.switchTab = function(cls) {
+            currentActiveTab = cls;
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`tab-${cls}`).classList.add('active');
+            document.querySelectorAll('.class-section').forEach(sec => sec.style.display = 'none');
+            document.getElementById(`section-${cls}`).style.display = 'block';
+        }
+
+        window.revealResults = function(cls) { playRevealSound(); revealedClasses[cls] = true; updateBoard(); }
+
+        // EXPORT RESULTS TO PNG
+        async function saveAsPNGs() {
+            if(!db) return alert("Waiting for data...");
+            try {
+                const resultsDir = await dirHandle.getDirectoryHandle('results', { create: true });
+                for (const cls of db.classes) {
+                    const candidates = db.candidates.filter(c => c.class === cls).sort((a,b) => b.votes - a.votes);
+                    if(candidates.length === 0) continue;
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 1000;
+                    canvas.height = 250 + (candidates.length * 120);
+                    const ctx = canvas.getContext('2d');
+                    
+                    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    ctx.fillStyle = '#2B3A8B'; ctx.font = 'bold 45px sans-serif';
+                    ctx.fillText(db.schoolName || "ELECTION RESULTS", 50, 80);
+                    ctx.fillStyle = '#333333'; ctx.font = 'bold 35px sans-serif';
+                    ctx.fillText(`${cls} - Final Tally`, 50, 140);
+                    
+                    ctx.fillStyle = '#e9ecef'; ctx.fillRect(50, 170, 900, 5);
+                    
+                    let y = 240;
+                    const totalVotes = candidates.reduce((s, c) => s + c.votes, 0);
+                    const highestVote = candidates[0].votes;
+                    
+                    candidates.forEach((c, idx) => {
+                        const isWinner = (c.votes === highestVote && c.votes > 0 && idx === 0);
+                        
+                        ctx.fillStyle = '#333333'; ctx.font = 'bold 32px sans-serif';
+                        ctx.fillText(c.name, 50, y);
+                        
+                        if (isWinner) { ctx.fillStyle = '#28a745'; ctx.fillText(" 👑 WINNER", 50 + ctx.measureText(c.name).width, y); }
+                        
+                        ctx.fillStyle = '#666666'; ctx.font = 'bold 28px sans-serif';
+                        ctx.fillText(`${c.votes} Votes`, 800, y);
+                        
+                        ctx.fillStyle = '#e9ecef'; ctx.fillRect(50, y + 25, 850, 35);
+                        
+                        const pct = totalVotes > 0 ? (c.votes / totalVotes) : 0;
+                        ctx.fillStyle = isWinner ? '#28a745' : '#2B3A8B'; ctx.fillRect(50, y + 25, 850 * pct, 35);
+                        y += 120;
+                    });
+                    
+                    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+                    const newFileHandle = await resultsDir.getFileHandle(`${cls}_result.png`, { create: true });
+                    const writable = await newFileHandle.createWritable();
+                    await writable.write(blob); await writable.close();
+                }
+                alert("✅ Success! Check the 'results' folder inside your election folder. All PNG images have been saved.");
+            } catch(e) { console.error(e); alert("Failed to save PNGs. Please check folder permissions."); }
+        }
+    </script>
+</body>
+</html>

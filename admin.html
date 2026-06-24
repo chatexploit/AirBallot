@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Election Control Center</title>
+    <style>
+        :root { --primary: #2B3A8B; --danger: #dc3545; --edit: #f39c12; }
+        body { font-family: -apple-system, sans-serif; background: #f0f2f5; margin:0; padding: 15px; }
+        .top-bar { background: white; padding: 15px; border-radius: 10px; display:flex; flex-direction:column; gap:10px; align-items: center; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); text-align:center;}
+        .fs-btn { background: #e9ecef; border: none; font-size: 20px; cursor: pointer; padding: 5px 10px; border-radius: 6px; }
+        
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; overflow-x: auto; }
+        h2 { margin-top:0; color: var(--primary); border-bottom: 2px solid #f0f2f5; padding-bottom: 10px; font-size: 18px;}
+        
+        button { background: var(--primary); color:white; border:none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight:bold; }
+        .btn-danger { background: var(--danger); }
+        .btn-success { background: #28a745; }
+        .btn-edit { background: var(--edit); }
+
+        input, select { padding: 10px; border: 1px solid #ccc; border-radius: 6px; margin-bottom: 10px; width: 100%; box-sizing:border-box;}
+        .status-pill { padding: 8px 16px; border-radius: 20px; font-weight: bold; color: white; display:inline-block; margin-top: 10px;}
+        .active-pill { background: #28a745; } .paused-pill { background: #f0ad4e; }
+        
+        .flex-row { display: flex; flex-direction: column; padding: 15px 0; border-bottom: 1px solid #eee; gap:10px; }
+        @media (min-width: 600px) { .flex-row { flex-direction: row; justify-content: space-between; align-items: center; } .top-bar { flex-direction: row; justify-content: space-between; } }
+    </style>
+</head>
+<body>
+
+    <div class="top-bar">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <img src="logo.png" style="height: 40px;">
+            <h1 style="margin:0; color:var(--primary); font-size:20px;">ADMIN SUITE</h1>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <button class="fs-btn" onclick="toggleFullScreen()">🖥️</button>
+            <div id="auth-req">Checking link...</div>
+        </div>
+    </div>
+
+    <div id="admin-panel" style="display: none; max-width: 1000px; margin: 0 auto;">
+        
+        <div class="card" style="text-align:center;">
+            <strong>System Status:</strong><br><span id="status-indicator" class="status-pill">UNKNOWN</span>
+            <div style="margin-top:15px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+                <button onclick="toggleElectionStatus()" id="status-toggle-btn">Pause Voting</button>
+                <button onclick="toggleVotingMode()" style="background:#17a2b8;">Toggle 1-Tap/2-Tap</button>
+                <button onclick="changePin()" style="background:#6c757d;">Change PIN</button>
+                <button onclick="downloadBackup()" style="background:#28a745;">💾 Download Backup</button>
+            </div>
+            <p style="margin-top:10px; font-size:14px; color:#666;">Mode: <strong id="mode-lbl"></strong></p>
+        </div>
+
+        <div class="card">
+            <h2>Batch Management & Resets</h2>
+            <div style="display:flex; gap:10px;">
+                <input type="text" id="new-class-input" placeholder="e.g. Class 8" style="margin:0;">
+                <button onclick="addClass()">Add</button>
+            </div>
+            <div id="classes-list" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:15px;"></div>
+        </div>
+
+        <div class="card" id="candidate-editor">
+            <h2 id="cand-form-title">Register Candidate</h2>
+            <input type="hidden" id="edit-id" value="">
+            <input type="text" id="cand-name" placeholder="Candidate Name">
+            <select id="cand-class-select"><option value="">Select Class...</option></select>
+            <input type="text" id="cand-photo" placeholder="Filename (e.g. photo.jpg)">
+            
+            <div style="display:flex; gap:10px;">
+                <button id="cand-submit-btn" onclick="saveCandidate()" class="btn-success" style="flex:1;">+ Add to Ballot</button>
+                <button id="cand-cancel-btn" onclick="cancelEdit()" class="btn-danger" style="display:none; flex:1;">Cancel</button>
+            </div>
+            <div id="candidates-table" style="margin-top: 20px;"></div>
+        </div>
+
+        <div class="card" style="border: 2px solid #ffb8b8; background: #fffcfc; text-align:center;">
+            <h2 style="color: var(--danger);">⚡ RESET</h2>
+            <button class="btn-danger" onclick="resetAllVotes()" style="margin-bottom:10px; width:100%;">Zero Out All Votes Entirely</button>
+            <button class="btn-danger" onclick="factoryReset()" style="background: #800000; width:100%;">Total Factory Reset</button>
+        </div>
+
+    </div>
+
+    <script>
+        const DB_NAME = 'ElectionPWA';
+        function getDB() { return new Promise(resolve => { const req = indexedDB.open(DB_NAME, 1); req.onupgradeneeded = e => e.target.result.createObjectStore('store'); req.onsuccess = e => resolve(e.target.result); }); }
+        async function getFolderHandle() { const db = await getDB(); return new Promise(resolve => { const req = db.transaction('store', 'readonly').objectStore('store').get('folderHandle'); req.onsuccess = () => resolve(req.result); req.onerror = () => resolve(null); }); }
+
+        let dirHandle = null, fileHandle = null, db = null;
+
+        window.onload = async () => {
+            dirHandle = await getFolderHandle();
+            if (dirHandle) document.getElementById('auth-req').innerHTML = `<button class="btn-success" onclick="authAdmin()">▶ Unlock Admin Suite</button>`;
+            else document.getElementById('auth-req').innerHTML = `<span style="color:red; font-weight:bold;">🚨 No Folder Linked!</span>`;
+        };
+
+        function toggleFullScreen() { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else if (document.exitFullscreen) document.exitFullscreen(); }
+
+        async function authAdmin() {
+            try {
+                if ((await dirHandle.queryPermission({ mode: 'readwrite' })) !== 'granted') { if ((await dirHandle.requestPermission({ mode: 'readwrite' })) !== 'granted') return alert("Permission Denied."); }
+                fileHandle = await dirHandle.getFileHandle('database.txt'); await load();
+                if(prompt("Enter Master PIN:") !== db.adminPin) return alert("Access Denied.");
+                document.getElementById('auth-req').style.display = 'none'; document.getElementById('admin-panel').style.display = 'block'; render();
+            } catch(e) { alert("Error connecting."); }
+        }
+
+        async function load() { db = JSON.parse(await (await fileHandle.getFile()).text()); }
+        async function save() { const w = await fileHandle.createWritable(); await w.write(JSON.stringify(db, null, 2)); await w.close(); await load(); render(); }
+
+        function render() {
+            const ind = document.getElementById('status-indicator'); const tog = document.getElementById('status-toggle-btn');
+            if(db.status === 'active') { ind.className = "status-pill active-pill"; ind.innerText = "LIVE"; tog.innerText = "⏸ Pause Voting"; tog.style.background = "#f0ad4e"; } 
+            else { ind.className = "status-pill paused-pill"; ind.innerText = "PAUSED"; tog.innerText = "▶ Unlock Voting"; tog.style.background = "#28a745"; }
+            document.getElementById('mode-lbl').innerText = (db.votingMode === '2-tap') ? "2-Tap" : "1-Tap";
+
+            const cList = document.getElementById('classes-list'); const cSelect = document.getElementById('cand-class-select');
+            cList.innerHTML = ''; cSelect.innerHTML = '<option value="">Select Class...</option>';
+            
+            db.classes.forEach(cls => {
+                cList.innerHTML += `<div style="background:#e9ecef; padding:8px 12px; border-radius:6px; font-weight:bold; font-size:14px; display:flex; align-items:center; gap: 10px;">
+                    ${cls} 
+                    <button class="btn-danger" style="padding:4px 8px; font-size:11px;" onclick="clearClassVotes('${cls}')">Clear Votes</button>
+                    <span style="color:red; cursor:pointer; font-size:18px;" onclick="deleteClass('${cls}')">×</span>
+                </div>`;
+                cSelect.innerHTML += `<option value="${cls}">${cls}</option>`;
+            });
+
+            const table = document.getElementById('candidates-table'); table.innerHTML = '';
+            db.candidates.forEach(c => {
+                table.innerHTML += `<div class="flex-row">
+                    <div style="display:flex; align-items:center; gap:15px;"><img src="${c.photo}" onerror="this.src='https://placehold.co/100?text=Pic'" style="width:40px; height:40px; border-radius:50%; object-fit:cover;"><strong>${c.name}</strong> <span style="color:#666;">(${c.class})</span></div>
+                    <div style="display:flex; align-items:center; gap:10px;"><span style="font-weight:bold; color:#2B3A8B; width: 60px;">${c.votes} v</span><button class="btn-edit" onclick="editCandidate(${c.id})">Edit</button><button class="btn-danger" onclick="deleteCandidate(${c.id})">Del</button></div>
+                </div>`;
+            });
+        }
+
+        async function toggleElectionStatus() { db.status = (db.status === 'active') ? 'paused' : 'active'; await save(); }
+        async function toggleVotingMode() { db.votingMode = (db.votingMode === '2-tap') ? '1-tap' : '2-tap'; await save(); }
+        async function addClass() { const val = document.getElementById('new-class-input').value.trim(); if(val && !db.classes.includes(val)){ db.classes.push(val); document.getElementById('new-class-input').value=''; await save();} }
+        async function deleteClass(cls) { if(confirm(`Delete ${cls}?`)){ db.classes = db.classes.filter(c => c !== cls); db.candidates = db.candidates.filter(c => c.class !== cls); await save(); } }
+        
+        async function clearClassVotes(cls) {
+            if(confirm(`Are you 100% sure you want to ZERO OUT all votes for ${cls}?`)) {
+                db.candidates.forEach(c => { if(c.class === cls) c.votes = 0; }); await save(); alert(`Votes for ${cls} wiped.`);
+            }
+        }
+
+        function downloadBackup() {
+            if(!db) return;
+            const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+            const link = document.createElement("a"); link.href = URL.createObjectURL(blob);
+            link.download = `Election_Backup_${new Date().getTime()}.txt`; link.click();
+        }
+        
+        function editCandidate(id) { const cand = db.candidates.find(c => c.id === id); document.getElementById('edit-id').value = cand.id; document.getElementById('cand-name').value = cand.name; document.getElementById('cand-class-select').value = cand.class; document.getElementById('cand-photo').value = cand.photo.replace('src/', ''); document.getElementById('cand-form-title').innerText = "Edit Candidate"; document.getElementById('cand-submit-btn').innerText = "Update"; document.getElementById('cand-submit-btn').className = "btn-edit"; document.getElementById('cand-cancel-btn').style.display = "block"; }
+        function cancelEdit() { document.getElementById('edit-id').value = ''; document.getElementById('cand-name').value = ''; document.getElementById('cand-photo').value = ''; document.getElementById('cand-class-select').value = ''; document.getElementById('cand-form-title').innerText = "Register Candidate"; document.getElementById('cand-submit-btn').innerText = "+ Add to Ballot"; document.getElementById('cand-submit-btn').className = "btn-success"; document.getElementById('cand-cancel-btn').style.display = "none"; }
+
+        async function saveCandidate() {
+            const id = document.getElementById('edit-id').value; const name = document.getElementById('cand-name').value.trim(); const cls = document.getElementById('cand-class-select').value; let photoInput = document.getElementById('cand-photo').value.trim();
+            if(!name || !cls) return alert("Supply Name and Class.");
+            let finalPhotoPath = photoInput ? (!photoInput.startsWith('http') && !photoInput.startsWith('src/') ? 'src/' + photoInput : photoInput) : 'https://placehold.co/200x200/2B3A8B/FFF?text=PIC';
+            if (id) { const index = db.candidates.findIndex(c => c.id == id); db.candidates[index].name = name; db.candidates[index].class = cls; db.candidates[index].photo = finalPhotoPath; } 
+            else { db.candidates.push({ id: db.candidates.length ? Math.max(...db.candidates.map(c=>c.id))+1 : 1, name, class: cls, photo: finalPhotoPath, votes: 0 }); }
+            cancelEdit(); await save();
+        }
+
+        async function deleteCandidate(id) { if(confirm("Remove?")){ db.candidates = db.candidates.filter(c => c.id !== id); await save(); } }
+        async function changePin() { const newP = prompt("New 4-digit PIN:"); if(newP && !isNaN(newP)) { db.adminPin = newP; await save(); } }
+        async function resetAllVotes() { if(prompt("Type 'CONFIRM'") === 'CONFIRM'){ db.candidates.forEach(c => c.votes = 0); await save(); } }
+        async function factoryReset() { if(prompt("Type 'WIPE EVERYTHING'") === 'WIPE EVERYTHING'){ db.classes = ["Class 9"]; db.candidates = []; db.status = "paused"; await save(); } }
+    </script>
+</body>
+</html>
